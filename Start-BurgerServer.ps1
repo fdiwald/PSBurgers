@@ -71,7 +71,13 @@ function Initialize-Webserver {
     
     Set-Variable -Name OrdersFile -Value "$BaseDir\Orders.xml" -Option Constant -Scope Script
 
-    $HtmlHead = "<head><meta charset=""UTF-8""></head>"
+    $StyleCss = Get-Content "$BaseDir\style.css"
+    $HtmlHead = @"
+        <head>
+            <meta charset=""UTF-8"">
+            <style>$StyleCss</style>
+        </head>
+"@
 
     # Set navigation header line for all web pages
     $MenuLinks = @"
