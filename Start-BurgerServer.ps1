@@ -47,6 +47,9 @@ Version: See $Version below
 Author: Florian Diwald
 #>
 Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "")
+
+Add-Type -AssemblyName System.Web
+
 $Product = "PSBurgers"
 $Version = "1.1"
 # No adminstrative permissions are required for a binding to "localhost"
