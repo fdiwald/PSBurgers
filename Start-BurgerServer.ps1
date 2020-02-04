@@ -89,7 +89,7 @@ function Initialize-Webserver {
 "@
     $DefaultPage = @"
     <!doctype html><html>$HtmlHead
-    <body>$MenuLinks<br>
+    <body><h1>Burger bestellen</h1>
     !ORDERTABLE</body></html>
 "@
     # HTML answer templates for specific calls, placeholders !RESULT, !FORMFIELD, !PROMPT are allowed
@@ -155,7 +155,6 @@ function Get-OrderTable {
     </form>
 "@
 }
-
 function Start-Listening {
     # Starting the powershell webserver
     "Starting powershell webserver..." | Write-Log
@@ -183,7 +182,6 @@ function Start-Listening {
         "Powershell webserver stopped." | Write-Log
     }
 }
-
 function Save-Order([string]$RequestData) {
     # Parse the data from the HTTP-Request into the $Orders-XML document.
     $Name = ""
@@ -202,6 +200,7 @@ function Save-Order([string]$RequestData) {
     }
     if($Name -eq "") {
         "Request ignored: No name given" | Write-Log
+    } else {
         Add-Order $Name $Comment
     }
 }
@@ -231,6 +230,7 @@ function Pop-Request {
                 $Reader.Close()
                 $Request.InputStream.Close()
 
+                $Data | Write-Log
                 Save-Order $Data
             }
             break
@@ -249,11 +249,11 @@ function Pop-Request {
     $HtmlResponse = $HtmlResponse -replace '!STYLECSS', (Get-Content $StyleFile)
 
     # return HTML answer to caller
-    $BUFFER = [Text.Encoding]::UTF8.GetBytes($HtmlResponse)
-    $Response.ContentLength64 = $BUFFER.Length
+    $Buffer = [Text.Encoding]::UTF8.GetBytes($HtmlResponse)
+    $Response.ContentLength64 = $Buffer.Length
     $Response.AddHeader("Last-Modified", [DATETIME]::Now.ToString('r'))
     $Response.AddHeader("Server", "$Product $Version")
-    $Response.OutputStream.Write($BUFFER, 0, $BUFFER.Length)
+    $Response.OutputStream.Write($Buffer, 0, $Buffer.Length)
 
     # and finish answer to client
     $Response.Close()
