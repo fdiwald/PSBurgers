@@ -74,7 +74,7 @@ function Initialize-Webserver {
 
     $HtmlHead = @"
         <head>
-            <meta charset=""UTF-8"">
+            <meta charset="UTF-8">
             <link rel="stylesheet" href="/style.css">
         </head>
 "@
@@ -90,11 +90,6 @@ function Initialize-Webserver {
     $DefaultPage = @"
     <!doctype html><html>$HtmlHead
     <body>$MenuLinks<br>
-        <form action="/" method="post">
-            <input type="text" name="name" placeholder="Dein Name">
-            <input type="text" name="comment" placeholder="Bemerkung">
-            <input type="submit" value="Bestellen">
-        </form> <br>
     !ORDERTABLE</body></html>
 "@
     # HTML answer templates for specific calls, placeholders !RESULT, !FORMFIELD, !PROMPT are allowed
@@ -131,18 +126,34 @@ function Add-Order ([string]$Name, [string]$Comment) {
 }
 
 function Get-OrderTable {
-    [string]$OrderTable = "<div class=""tablewrapper""><table><thead><tr><th>Name</th><th>Bemerkung</th></tr></thead>"
-    $OrderTable += "<tbody>"
     foreach($Order in $Orders.SelectNodes("/Orders/Order")) {
         $Comment = $Order.GetAttribute($ATTRIBUTE_COMMENT)
         if ($null -eq $Comment) {
             $Comment = ""
         }
-        $OrderTable += "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td></tr>"
+        $PreviousOrders += "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td></tr>"
     }
-    [string]$OrderTable += "</tbody></table></div>"
 
-    $OrderTable
+    @"
+    <form action="/" method="post">
+        <div class="tablewrapper">
+            <table><thead><tr><th>Name</th><th>Bemerkung</th></tr></thead>
+                <tbody>
+                    $PreviousOrders
+                    <tr>
+                        <td>
+                            <input type="text" name="name" placeholder="Dein Name">
+                        </td>
+                        <td>
+                            <input type="text" name="comment" placeholder="Bemerkung">
+                            <input type="submit" value="Bestellen">
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </form>
+"@
 }
 
 function Start-Listening {
