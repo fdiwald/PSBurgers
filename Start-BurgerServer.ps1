@@ -48,7 +48,7 @@ Author: Florian Diwald
 #>
 Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "")
 $Product = "PSBurgers"
-$Version = "1.0"
+$Version = "1.1"
 # No adminstrative permissions are required for a binding to "localhost"
 # $Binding = 'http://localhost:8080/'
 # Adminstrative permissions are required for a binding to network names or addresses.
@@ -70,12 +70,12 @@ function Initialize-Webserver {
     $Script:BaseDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BaseDir)
     
     Set-Variable -Name OrdersFile -Value "$BaseDir\Orders.xml" -Option Constant -Scope Script
+    Set-Variable -Name StyleFile -Value "$BaseDir\style.css" -Option Constant -Scope Script
 
-    $StyleCss = Get-Content "$BaseDir\style.css"
     $HtmlHead = @"
         <head>
             <meta charset=""UTF-8"">
-            <style>$StyleCss</style>
+            <link rel="stylesheet" href="/style.css">
         </head>
 "@
 
@@ -89,12 +89,12 @@ function Initialize-Webserver {
 "@
     $DefaultPage = @"
     <!doctype html><html>$HtmlHead
-    <body>$MenuLinks<br />
+    <body>$MenuLinks<br>
         <form action="/" method="post">
             <input type="text" name="name" placeholder="Dein Name">
             <input type="text" name="comment" placeholder="Bemerkung">
             <input type="submit" value="Bestellen">
-        </form> <br />
+        </form> <br>
     !ORDERTABLE</body></html>
 "@
     # HTML answer templates for specific calls, placeholders !RESULT, !FORMFIELD, !PROMPT are allowed
@@ -102,7 +102,8 @@ function Initialize-Webserver {
         'GET /' = $DefaultPage
         'POST /' = $DefaultPage
         'GET /exit' = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
-        'GET /log' = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br />Log of powershell webserver:<br /><pre>!WEBLOG</pre></body></html>"
+        'GET /log' = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
+        'GET /style.css' = "!STYLECSS"
     }
 
     Read-Orders
@@ -130,7 +131,7 @@ function Add-Order ([string]$Name, [string]$Comment) {
 }
 
 function Get-OrderTable {
-    [string]$OrderTable = "<table><thead><tr><td>Name</td><td>Bemerkung</td></tr></thead>"
+    [string]$OrderTable = "<div class=""tablewrapper""><table><thead><tr><th>Name</th><th>Bemerkung</th></tr></thead>"
     $OrderTable += "<tbody>"
     foreach($Order in $Orders.SelectNodes("/Orders/Order")) {
         $Comment = $Order.GetAttribute($ATTRIBUTE_COMMENT)
@@ -139,7 +140,7 @@ function Get-OrderTable {
         }
         $OrderTable += "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td></tr>"
     }
-    [string]$OrderTable += "</table></tbody>"
+    [string]$OrderTable += "</tbody></table></div>"
 
     $OrderTable
 }
@@ -174,6 +175,7 @@ function Start-Listening {
 
 function Save-Order([string]$RequestData) {
     # Parse the data from the HTTP-Request into the $Orders-XML document.
+    $Name = ""
     foreach($KeyValuePair in $RequestData -split "&") {
         $KeyAndValue = $KeyValuePair -split "="
         switch ($KeyAndValue[0]) {
@@ -187,7 +189,10 @@ function Save-Order([string]$RequestData) {
             }
         }
     }
-    Add-Order $Name $Comment
+    if($Name -eq "") {
+        "Request ignored: No name given" | Write-Log
+        Add-Order $Name $Comment
+    }
 }
 function Pop-Request {
     # Get a request from the stack and process it
@@ -230,6 +235,7 @@ function Pop-Request {
     # replace the dynamic parts
     $HtmlResponse = $HtmlResponse -replace '!WEBLOG', $WebLog
     $HtmlResponse = $HtmlResponse -replace '!ORDERTABLE', (Get-OrderTable)
+    $HtmlResponse = $HtmlResponse -replace '!STYLECSS', (Get-Content $StyleFile)
 
     # return HTML answer to caller
     $BUFFER = [Text.Encoding]::UTF8.GetBytes($HtmlResponse)
