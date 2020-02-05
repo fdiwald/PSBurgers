@@ -93,7 +93,9 @@ function Initialize-Webserver {
     $DefaultPage = @"
     <!doctype html><html>$HtmlHead
     <body><h1>Burger bestellen</h1>
-    !ORDERTABLE</body></html>
+    !ORDERTABLE
+    <div class="spacer20"></div><div id="banner"><a href="https://www.der-ruzicka.com/der-ruzicka-kocht/"><img src="https://image.jimcdn.com/app/cms/image/transf/dimension=800x10000:format=png/path/sa3fcedd223359978/image/i681edc5f544e7cff/version/1580654741/image.png"></a></div>
+    </body></html>
 "@
     # HTML answer templates for specific calls, placeholders !RESULT, !FORMFIELD, !PROMPT are allowed
     $Script:HtmlResponseContent = @{
@@ -138,8 +140,8 @@ function Get-OrderTable {
     }
 
     @"
-    <form action="/" method="post">
-        <div class="tablewrapper">
+    <div class="tablewrapper">
+        <form action="/" method="post">
             <table><thead><tr><th>Name</th><th>Bemerkung</th></tr></thead>
                 <tbody>
                     $PreviousOrders
@@ -154,8 +156,8 @@ function Get-OrderTable {
                     </tr>
                 </tbody>
             </table>
-        </div>
-    </form>
+        </form>
+    </div>
 "@
 }
 function Start-Listening {

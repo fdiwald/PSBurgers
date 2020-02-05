@@ -34,6 +34,7 @@ button:hover {
     border-radius: 5px;
     overflow: hidden;
     border: 1px #dbdbdb solid;
+    float: left;
 }
 table {
     width: 100%;
@@ -52,6 +53,9 @@ td,th {
     line-height: 1.2;
     padding: 10px;
     border-bottom: 1px solid #dbdbdb;
+    max-width: 200px;
+    white-space: nowrap;
+    overflow: hidden;
 }
 th {
     font-size: 18px;
@@ -61,4 +65,14 @@ th {
 tbody tr:hover {
     background-color: #ececff;
     cursor: pointer;
+}
+
+#banner {
+    display: inline;
+}
+
+.spacer20 {
+    margin-left: 20px;
+    display: inline-block;
+    height: 0px;
 }
