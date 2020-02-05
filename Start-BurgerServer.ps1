@@ -19,6 +19,10 @@ After stopping the webserver you should remove the rule, e.g.:
 Binding of the webserver
 .Parameter BASEDIR
 Base directory for static content (default: current directory)
+.Parameter BannerImg
+Url to an optional banner image next to the table with the placed orders
+.Parameter BannerUrl
+Url for an optional link on the banner image
 .Inputs
 None
 .Outputs
@@ -46,7 +50,7 @@ Scheduled tasks are running with low priority per default, so some functions mig
 Version: See $Version below
 Author: Florian Diwald
 #>
-Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "")
+Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "", [string]$BannerImg = "", [string]$BannerUrl = "")
 
 Add-Type -AssemblyName System.Web
 
@@ -90,11 +94,19 @@ function Initialize-Webserver {
             <a href='/exit'>Stop webserver</a>
         </p>
 "@
+
+    if($BannerImg -ne "") {
+        $BannerHtml = "<img src=""$BannerImg"">"
+        if ($BannerUrl -ne "") {
+            $BannerHtml = "<a href=""$BannerUrl"">$BannerHtml</a>"
+        }
+        $BannerHtml = "<div class=""spacer20""></div><div id=""banner"">$BannerHtml</div>"
+    }
     $DefaultPage = @"
     <!doctype html><html>$HtmlHead
     <body><h1>Burger bestellen</h1>
     !ORDERTABLE
-    <div class="spacer20"></div><div id="banner"><a href="https://www.der-ruzicka.com/der-ruzicka-kocht/"><img src="https://image.jimcdn.com/app/cms/image/transf/dimension=800x10000:format=png/path/sa3fcedd223359978/image/i681edc5f544e7cff/version/1580654741/image.png"></a></div>
+    $BannerHtml
     </body></html>
 "@
     # HTML answer templates for specific calls, placeholders !RESULT, !FORMFIELD, !PROMPT are allowed
