@@ -113,6 +113,7 @@ function Initialize-Webserver {
     $Script:HtmlResponseContent = @{
         'GET /' = $DefaultPage
         'POST /' = $DefaultPage
+        'GET /reloadOrders' = $DefaultPage
         'GET /exit' = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
         'GET /log' = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
         'GET /style.css' = "!STYLECSS"
@@ -229,7 +230,8 @@ function Pop-Request {
     $Script:ContinueListening = $true
 
     # log access
-    "$($Request.RemoteEndPoint.Address.ToString()) $($Request.httpMethod) $($Request.Url.PathAndQuery)" | Write-Log
+    $hostname = Resolve-IPAdress $Request.RemoteEndPoint.Address
+    "$($hostname) $($Request.httpMethod) $($Request.Url.PathAndQuery)" | Write-Log
 
     # is there a fixed coding for the request?
     $Received = '{0} {1}' -f $Request.httpMethod, $Request.Url.LocalPath
@@ -247,7 +249,7 @@ function Pop-Request {
                 $Reader.Close()
                 $Request.InputStream.Close()
 
-                $Data | Write-Log
+                "$hostname $Data" | Write-Log
                 Save-Order $Data
             }
             break
@@ -256,6 +258,13 @@ function Pop-Request {
         "GET /exit"
         {
             $Script:ContinueListening = $false
+            break
+        }
+
+        "GET /reloadOrders"
+        {
+            "$hostname Realoading Orders" | Write-Log
+            Read-Orders
             break
         }
     }
@@ -274,6 +283,17 @@ function Pop-Request {
 
     # and finish answer to client
     $Response.Close()
+}
+
+function Resolve-IPAdress([System.Net.IPAddress]$IPAddress) {
+    # Returns the hostname to the given IP-Address or the IP-Address if not successful.
+    try {
+        $hostname = [System.Net.DNS]::GetHostEntry($IPAddress).hostname;
+    }
+    catch {
+        $hostname = $IPAddress
+    }
+    $hostname
 }
 
 function Write-Log {
