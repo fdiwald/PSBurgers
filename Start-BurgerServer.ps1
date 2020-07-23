@@ -36,16 +36,6 @@ Start-Webserver.ps1 "http://+:8080/"
 
 Starts webserver with binding to all IP addresses of the system.
 Administrative rights are necessary.
-.Example
-schtasks.exe /Create /TN "Powershell Webserver" /TR "powershell -file C:\Users\Markus\Documents\Start-WebServer.ps1 http://+:8080/" /SC ONSTART /RU SYSTEM /RL HIGHEST /F
-
-Starts powershell webserver as scheduled task as user local system every time the computer starts (when the
-correct path to the file Start-WebServer.ps1 is given).
-You can start the webserver task manually with
-	schtasks.exe /Run /TN "Powershell Webserver"
-Delete the webserver task with
-	schtasks.exe /Delete /TN "Powershell Webserver"
-Scheduled tasks are running with low priority per default, so some functions might be slow.
 .Notes
 Version: See $Version below
 Author: Florian Diwald
@@ -55,7 +45,7 @@ Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "", [strin
 Add-Type -AssemblyName System.Web
 
 $Product = "PSBurgers"
-$Version = "1.1"
+$Version = "1.2"
 # No adminstrative permissions are required for a binding to "localhost"
 # $Binding = 'http://localhost:8080/'
 # Adminstrative permissions are required for a binding to network names or addresses.
@@ -79,22 +69,27 @@ function Initialize-Webserver {
     Set-Variable -Name OrdersFile -Value "$BaseDir\Orders.xml" -Option Constant -Scope Script
     Set-Variable -Name StyleFile -Value "$BaseDir\style.css" -Option Constant -Scope Script
 
+    # A GUID which the user needs to access the administration page
+    $Script:AdminGuid = New-Guid
+    "Admin-Access: $Binding$Script:AdminGuid".Replace("+", $env:computername).Replace("*", $env:computername) | Write-Log;
+    
     $HtmlHead = @"
-        <head>
-            <meta charset="UTF-8">
-            <link rel="stylesheet" href="/style.css">
-        </head>
+    <head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="/style.css">
+    </head>
 "@
-
-    # Set navigation header line for all web pages
+    
+    # navigation header line
     $MenuLinks = @"
-        <p>
-            <a href='/'>Burger bestellen</a>
-            <a href='/log'>Web logs</a>
-            <a href='/exit'>Stop webserver</a>
-        </p>
+    <p>
+    <a href='/'>Burger bestellen</a>
+    <a href='/log'>Web logs</a>
+    <a href='/exit'>Stop webserver</a>
+    <a href='/reloadOrders'>Reload orders</a>
+    </p>
 "@
-
+    
     if($BannerImg -ne "") {
         $BannerHtml = "<img src=""$BannerImg"">"
         if ($BannerUrl -ne "") {
@@ -109,12 +104,13 @@ function Initialize-Webserver {
     $BannerHtml
     </body></html>
 "@
-    # HTML answer templates for specific calls, placeholders !RESULT, !FORMFIELD, !PROMPT are allowed
+
+    # HTML answer templates for specific calls
     $Script:HtmlResponseContent = @{
         'GET /' = $DefaultPage
         'POST /' = $DefaultPage
         'GET /exit' = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
-        'GET /log' = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
+        "GET /$Script:AdminGuid" = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>!ORDERTABLE<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
         'GET /style.css' = "!STYLECSS"
     }
 
@@ -177,12 +173,18 @@ function Start-Listening {
     "Starting powershell webserver..." | Write-Log
     $Script:Listener = New-Object System.Net.HttpListener
     $Listener.Prefixes.Add($Binding) | Write-Log
-    $Listener.Start() | Write-Log
-    $Error.Clear() | Out-Null
+    try
+    {
+        $Listener.Start() | Write-Log
+        "Powershell webserver started on $Binding." | Write-Log
+    }
+    catch{
+        $Error | Write-Log
+        $Error.Clear() | Out-Null
+    }
 
     try
     {
-        "Powershell webserver started on $Binding." | Write-Log
         while ($Listener.IsListening)
         {
             Pop-Request
