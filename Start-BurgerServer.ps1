@@ -5,10 +5,6 @@ Starts a webserver in Powershell serving a website where you can order Burgers.
 Credits: This is based on the Powershell Web Server of Markus Scholtes: https://github.com/MScholtes/SysAdminsFriends
 Starts a webserver in Powershell. This is a very dirty approach and just an attempt to entertain my coworkers.
 Call of the root page (e.g. http://localhost:8080/) returns a website to order Burgers.
-Call of /log returns the webserver logs.
-/exit stops the webserver.
-Any other call delivers the static content that fits to the path provided. If the static path is a directory,
-a file index.htm, index.html, default.htm or default.html in this directory is delivered if present.
 
 You may have to configure a firewall exception to allow access to the chosen port, e.g. with:
 	netsh advfirewall firewall add rule name="Powershell Webserver" dir=in action=allow protocol=TCP localport=8080
@@ -17,6 +13,11 @@ After stopping the webserver you should remove the rule, e.g.:
 	netsh advfirewall firewall delete rule name="Powershell Webserver"
 .Parameter BINDING
 Binding of the webserver
+No adminstrative permissions are required for a binding to "localhost"
+$Binding = 'http://localhost:8080/'
+Adminstrative permissions are required for a binding to network names or addresses.
++ takes all requests to the port regardless of name or IP address, * only requests that no other listener answers:
+$Binding = 'http://+:8080/'
 .Parameter BASEDIR
 Base directory for static content (default: current directory)
 .Parameter BannerImg
@@ -42,15 +43,10 @@ Author: Florian Diwald
 #>
 Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "", [string]$BannerImg = "", [string]$BannerUrl = "")
 
-Add-Type -AssemblyName System.Web
-
 $Product = "PSBurgers"
-$Version = "1.2"
-# No adminstrative permissions are required for a binding to "localhost"
-# $Binding = 'http://localhost:8080/'
-# Adminstrative permissions are required for a binding to network names or addresses.
-# + takes all requests to the port regardless of name or ip, * only requests that no other listener answers:
-# $Binding = 'http://+:8080/'
+$Version = "1.3"
+
+Add-Type -AssemblyName System.Web
 
 function Initialize-Webserver {
     # Initial one time tasks
@@ -66,27 +62,31 @@ function Initialize-Webserver {
     # convert to absolute path
     $Script:BaseDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($BaseDir)
     
+    Set-Variable -Name AdminGuid -Value (New-Guid) -Option Constant -Scope Script
     Set-Variable -Name OrdersFile -Value "$BaseDir\Orders.xml" -Option Constant -Scope Script
-    Set-Variable -Name StyleFile -Value "$BaseDir\style.css" -Option Constant -Scope Script
+    Set-Variable -Name StyleFileContent -Value (Get-Content "$BaseDir\style.css" -Raw) -Option Constant -Scope Script
+    Set-Variable -Name ScriptFileContent -Value (Get-Content "$BaseDir\script.js" -Raw) -Option Constant -Scope Script
+    $HtmlResponse = $HtmlResponse -replace '!WEBLOG', $WebLog
 
     # A GUID which the user needs to access the administration page
-    $Script:AdminGuid = New-Guid
     "Admin-Access: $Binding$Script:AdminGuid".Replace("+", $env:computername).Replace("*", $env:computername) | Write-Log;
     
     $HtmlHead = @"
     <head>
-    <meta charset="UTF-8">
-    <link rel="stylesheet" href="/style.css">
+        <meta charset="UTF-8">
+        <link rel="stylesheet" href="/style.css">
+        <script src="/script.js"></script>
+        !SETADMINGUID
     </head>
 "@
     
     # navigation header line
     $MenuLinks = @"
     <p>
-    <a href='/'>Burger bestellen</a>
-    <a href='/log'>Web logs</a>
-    <a href='/exit'>Stop webserver</a>
-    <a href='/reloadOrders'>Reload orders</a>
+        <a href="/">Burger bestellen</a>
+        <a href="/log">Web logs</a>
+        <a href="/$AdminGuid/exit">Stop webserver</a>
+        <a href="" onclick="javascript:reloadOrders()">Reload orders</a>
     </p>
 "@
     
@@ -107,12 +107,14 @@ function Initialize-Webserver {
 
     # HTML answer templates for specific calls
     $Script:HtmlResponseContent = @{
-        'GET /' = $DefaultPage
-        'POST /' = $DefaultPage
-        'GET /reloadOrders' = $DefaultPage
-        'GET /exit' = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
-        "GET /$Script:AdminGuid" = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>!ORDERTABLE<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
-        'GET /style.css' = "!STYLECSS"
+        "GET /" = $DefaultPage
+        "POST /" = $DefaultPage
+        "GET /reloadOrders" = $DefaultPage
+        "GET /$AdminGuid/exit" = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
+        "GET /$AdminGuid" = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>!ORDERTABLE<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
+        "GET /style.css" = $StyleFileContent
+        "GET /script.js" = $ScriptFileContent
+        "POST /$AdminGuid/delete" = ""
     }
 
     Read-Orders
@@ -139,21 +141,39 @@ function Add-Order ([string]$Name, [string]$Comment) {
     $Orders.Save($OrdersFile) | Write-Log
 }
 
-function Get-OrderTable {
-    foreach($Order in $Orders.SelectNodes("/Orders/Order")) {
-        $Comment = $Order.GetAttribute($ATTRIBUTE_COMMENT)
-        if ($null -eq $Comment) {
-            $Comment = ""
-        }
-        $PreviousOrders += "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td></tr>"
-    }
-
+function Get-OrderTable([bool]$isAdminPage) {
+    # Delivers the HTML-table containing the placed orders.
+    # $isAdminPage is true if admin user controls should be included.
+    
     @"
     <div class="tablewrapper">
         <form action="/" method="post">
-            <table><thead><tr><th>Name</th><th>Bemerkung</th></tr></thead>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Name</th>
+                        <th>Bemerkung</th>
+"@
+                        $(if ($isAdminPage) {
+                            "<th>L&ouml;schen</th>"
+                        })
+@"
+                    </tr>
+                </thead>
                 <tbody>
-                    $PreviousOrders
+"@
+                foreach($Order in $Orders.SelectNodes("/Orders/Order")) {
+                    $Comment = $Order.GetAttribute($ATTRIBUTE_COMMENT)
+                    if ($null -eq $Comment) {
+                        $Comment = ""
+                    }
+                    "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td>"
+                    if ($isAdminPage) {
+                        "<td><a class=""deleteLink"" href="""" guid=""$($Order.GetAttribute($ATTRIBUTE_GUID).ToString())"">&#10060;</a></td>"
+                    }
+                    "</tr>"
+                }
+@"
                     <tr>
                         <td>
                             <input type="text" name="name" placeholder="Dein Name">
@@ -202,7 +222,7 @@ function Start-Listening {
         "Powershell webserver stopped." | Write-Log
     }
 }
-function Save-Order([string]$RequestData) {
+function Receive-Order([string]$RequestData) {
     # Parse the data from the HTTP-Request into the $Orders-XML document.
     $Name = ""
     foreach($KeyValuePair in $RequestData -split "&") {
@@ -224,6 +244,36 @@ function Save-Order([string]$RequestData) {
         Add-Order $Name $Comment
     }
 }
+function Receive-OrderRemoval([string]$resource, [string]$requestData) {
+    # parse and process the request for removing an order
+    $receivedAdminGuid = ""
+    foreach($keyValuePair in $requestData -split "&") {
+        $keyAndValue = $keyValuePair -split "="
+        switch ($keyAndValue[0]) {
+            "adminGuid" {
+                $receivedAdminGuid = [System.Web.HttpUtility]::UrlDecode($keyAndValue[1])
+                break
+            }
+        }
+    }
+
+    if($receivedAdminGuid -eq $AdminGuid) {
+        $orderGuid = $resource -replace "/", ""
+        Remove-Order $orderGuid
+    } else {
+        "Request ignored: wrong/no adminGuid given" | Write-Log
+    }
+}
+
+function Remove-Order([Guid]$guid) {
+    $xmlOrder = $Orders.DocumentElement.SelectSingleNode("Order[@$ATTRIBUTE_GUID='$guid']")
+    if($null -ne $xmlOrder)
+    {
+        $Orders.DocumentElement.RemoveChild($xmlOrder)
+        $Orders.Save($OrdersFile) | Write-Log
+    }
+}
+
 function Pop-Request {
     # Get a request from the stack and process it
     $Context = $Listener.GetContext()
@@ -235,35 +285,36 @@ function Pop-Request {
     $hostname = Resolve-IPAdress $Request.RemoteEndPoint.Address
     "$($hostname) $($Request.httpMethod) $($Request.Url.PathAndQuery)" | Write-Log
 
-    # is there a fixed coding for the request?
+    # initialize with static responses
     $Received = '{0} {1}' -f $Request.httpMethod, $Request.Url.LocalPath
     $HtmlResponse = $HtmlResponseContent[$Received]
+
+    [bool]$isAdminPage = $false
 
     # check for known commands
     switch ($Received)
     {
         "POST /"
         {
-            if ($Request.HasEntityBody){
-                # read all the posted parameters into $Data
-                $Reader = New-Object System.IO.StreamReader($Request.InputStream, $Request.ContentEncoding)
-                $Data = $Reader.ReadToEnd()
-                $Reader.Close()
-                $Request.InputStream.Close()
-
-                "$hostname $Data" | Write-Log
-                Save-Order $Data
-            }
+            $data = Get-RequestData($Request)
+            "$hostname $data" | Write-Log
+            Receive-Order $data
             break
         }
 
-        "GET /exit"
+        "GET /$AdminGuid"
+        {
+            $isAdminPage = $true
+            break
+        }
+
+        "GET /$AdminGuid/exit"
         {
             $Script:ContinueListening = $false
             break
         }
 
-        "GET /reloadOrders"
+        "GET /$AdminGuid/reloadOrders"
         {
             "$hostname Realoading Orders" | Write-Log
             Read-Orders
@@ -271,10 +322,21 @@ function Pop-Request {
         }
     }
 
+    if ($Request.HttpMethod -eq "DELETE") {
+        $data = Get-RequestData($Request)
+        "$hostname $data" | Write-Log
+        Receive-OrderRemoval $Request.Url.LocalPath, $data
+    }
+
     # replace the dynamic parts
     $HtmlResponse = $HtmlResponse -replace '!WEBLOG', $WebLog
-    $HtmlResponse = $HtmlResponse -replace '!ORDERTABLE', (Get-OrderTable)
-    $HtmlResponse = $HtmlResponse -replace '!STYLECSS', (Get-Content $StyleFile)
+    $HtmlResponse = $HtmlResponse -replace '!ORDERTABLE', (Get-OrderTable $isAdminPage)
+    if ($isAdminPage) {
+        $HtmlResponse = $HtmlResponse -replace '!SETADMINGUID', "<script>adminGuid='$AdminGuid';</script>"
+    }
+    else {
+        $HtmlResponse = $HtmlResponse -replace '!SETADMINGUID', ""
+    }
 
     # return HTML answer to caller
     $Buffer = [Text.Encoding]::UTF8.GetBytes($HtmlResponse)
@@ -285,6 +347,18 @@ function Pop-Request {
 
     # and finish answer to client
     $Response.Close()
+}
+
+function Get-RequestData ($request){
+    if ($request.HasEntityBody){
+        # read all the posted parameters into $Data
+        $Reader = New-Object System.IO.StreamReader($request.InputStream, $request.ContentEncoding)
+        
+        $Reader.ReadToEnd()
+        
+        $Reader.Close()
+        $request.InputStream.Close()
+    }
 }
 
 function Resolve-IPAdress([System.Net.IPAddress]$IPAddress) {
