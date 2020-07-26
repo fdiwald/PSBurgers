@@ -1,21 +1,32 @@
 window.onload = function() {
     // set the onclick event for every deleteLink
-    document.getElementsByClassName("deleteLink").forEach(deleteLink => {
-        deleteLink.onclick = function() {
-            // delete the order
-            fetch(`/${deleteLink.GetAttribute("guid")}`,
-                {method: 'DELETE',
-                body: `adminGuid=${adminGuid}`});
+    Array.prototype.forEach.call(document.getElementsByClassName("deleteOrderLink"), deleteOrderLink => {
+        deleteOrderLink.onclick = (eventArgs) => {
+            deleteOrder(eventArgs.target.attributes["orderGuid"].value)
+                .then(() => window.location.reload());
             // refresh the page
-            window.location.reload();
-            return false;
+            //,,,,window.location.reload();
         }
+    });
+
+    // set the onclick event for the reloadOrdersLink
+    document.getElementById("reloadOrdersLink").onclick = () => {
+        reloadOrders()
+            .then(window.location.reload);
+        // refresh the page
+        //,,,, window.location.reload();
+    }
+}
+
+function deleteOrder(orderGuid) {
+    return fetch(`/${orderGuid}`,
+    {
+        method: 'DELETE',
+        body: `adminGuid=${adminGuid}`
     });
 }
 
 function reloadOrders() {
     // reload the orders from the XML file
-    fetch(`/${adminGuid}/reloadOrders`);
-    // refresh the page
-    window.location.reload();
+    return fetch(`/${adminGuid}/reloadOrders`);
 }

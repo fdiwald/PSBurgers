@@ -64,9 +64,8 @@ function Initialize-Webserver {
     
     Set-Variable -Name AdminGuid -Value (New-Guid) -Option Constant -Scope Script
     Set-Variable -Name OrdersFile -Value "$BaseDir\Orders.xml" -Option Constant -Scope Script
-    Set-Variable -Name StyleFileContent -Value (Get-Content "$BaseDir\style.css" -Raw) -Option Constant -Scope Script
-    Set-Variable -Name ScriptFileContent -Value (Get-Content "$BaseDir\script.js" -Raw) -Option Constant -Scope Script
-    $HtmlResponse = $HtmlResponse -replace '!WEBLOG', $WebLog
+    $Script:StyleFileContent = Get-Content "$BaseDir\style.css" -Raw
+    $Script:ScriptFileContent =Get-Content "$BaseDir\script.js" -Raw
 
     # A GUID which the user needs to access the administration page
     "Admin-Access: $Binding$Script:AdminGuid".Replace("+", $env:computername).Replace("*", $env:computername) | Write-Log;
@@ -86,7 +85,7 @@ function Initialize-Webserver {
         <a href="/">Burger bestellen</a>
         <a href="/log">Web logs</a>
         <a href="/$AdminGuid/exit">Stop webserver</a>
-        <a href="" onclick="javascript:reloadOrders()">Reload orders</a>
+        <a href="javascript:void(0);" id="reloadOrdersLink">Reload orders</a>
     </p>
 "@
     
@@ -98,20 +97,28 @@ function Initialize-Webserver {
         $BannerHtml = "<div class=""spacer20""></div><div id=""banner"">$BannerHtml</div>"
     }
     $DefaultPage = @"
-    <!doctype html><html>$HtmlHead
-    <body><h1>Burger bestellen</h1>
-    !ORDERTABLE
-    $BannerHtml
-    </body></html>
+        <!doctype html><html>$HtmlHead
+        <body><h1>Burger bestellen</h1>
+        !ORDERTABLE
+        $BannerHtml
+        </body></html>
 "@
-
+    $AdminPage = @"
+        <!doctype html><html>$HtmlHead
+        <body>$MenuLinks<br>
+        !ORDERTABLE
+        Log of powershell webserver:<br>
+        <pre>!WEBLOG</pre>
+        </body></html>
+"@
     # HTML answer templates for specific calls
     $Script:HtmlResponseContent = @{
         "GET /" = $DefaultPage
         "POST /" = $DefaultPage
         "GET /reloadOrders" = $DefaultPage
         "GET /$AdminGuid/exit" = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
-        "GET /$AdminGuid" = "<!doctype html><html>$HtmlHead<body>$MenuLinks<br>!ORDERTABLE<br>Log of powershell webserver:<br><pre>!WEBLOG</pre></body></html>"
+        "GET /$AdminGuid" = $AdminPage
+        "POST /$AdminGuid" = $AdminPage
         "GET /style.css" = $StyleFileContent
         "GET /script.js" = $ScriptFileContent
         "POST /$AdminGuid/delete" = ""
@@ -145,9 +152,14 @@ function Get-OrderTable([bool]$isAdminPage) {
     # Delivers the HTML-table containing the placed orders.
     # $isAdminPage is true if admin user controls should be included.
     
+    "<div class=""tablewrapper"">"
+    if ($isAdminPage){
+        "<form action=""/$AdminGuid"" method=""post"">"
+    }
+    else {
+        "<form action=""/"" method=""post"">"
+    }
     @"
-    <div class="tablewrapper">
-        <form action="/" method="post">
             <table>
                 <thead>
                     <tr>
@@ -169,7 +181,7 @@ function Get-OrderTable([bool]$isAdminPage) {
                     }
                     "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td>"
                     if ($isAdminPage) {
-                        "<td><a class=""deleteLink"" href="""" guid=""$($Order.GetAttribute($ATTRIBUTE_GUID).ToString())"">&#10060;</a></td>"
+                        "<td class=""deleteOrderColumn""><a class=""deleteOrderLink"" href=""javascript:void(0);"" orderGuid=""$($Order.GetAttribute($ATTRIBUTE_GUID).ToString())"">&#10060;</a></td>"
                     }
                     "</tr>"
                 }
@@ -178,7 +190,14 @@ function Get-OrderTable([bool]$isAdminPage) {
                         <td>
                             <input type="text" name="name" placeholder="Dein Name">
                         </td>
-                        <td>
+"@
+                        if ($isAdminPage){
+                            "<td colspan=""2"">"
+                        }
+                        else {
+                            "<td>"
+                        }
+                        @"
                             <input type="text" name="comment" placeholder="Bemerkung">
                             <input type="submit" value="Bestellen">
                         </td>
@@ -261,7 +280,7 @@ function Receive-OrderRemoval([string]$resource, [string]$requestData) {
         $orderGuid = $resource -replace "/", ""
         Remove-Order $orderGuid
     } else {
-        "Request ignored: wrong/no adminGuid given" | Write-Log
+        "Request ignored: wrong/no adminGuid given ($receivedAdminGuid)" | Write-Log
     }
 }
 
@@ -294,49 +313,50 @@ function Pop-Request {
     # check for known commands
     switch ($Received)
     {
-        "POST /"
+        {$_ -like "POST /*"}
         {
             $data = Get-RequestData($Request)
             "$hostname $data" | Write-Log
             Receive-Order $data
-            break
         }
 
         "GET /$AdminGuid"
         {
             $isAdminPage = $true
-            break
         }
 
         "GET /$AdminGuid/exit"
         {
             $Script:ContinueListening = $false
-            break
         }
 
         "GET /$AdminGuid/reloadOrders"
         {
-            "$hostname Realoading Orders" | Write-Log
+            "$hostname Reloading Orders" | Write-Log
             Read-Orders
-            break
+        }
+
+        "GET /script.js"
+        {
+            $Response.ContentType = "application/javascript"
         }
     }
 
     if ($Request.HttpMethod -eq "DELETE") {
         $data = Get-RequestData($Request)
-        "$hostname $data" | Write-Log
-        Receive-OrderRemoval $Request.Url.LocalPath, $data
+        "$hostname Data: $data" | Write-Log
+        Receive-OrderRemoval $Request.Url.LocalPath $data
     }
 
     # replace the dynamic parts
     $HtmlResponse = $HtmlResponse -replace '!WEBLOG', $WebLog
     $HtmlResponse = $HtmlResponse -replace '!ORDERTABLE', (Get-OrderTable $isAdminPage)
+
+    [string]$setAdminGuid = ""
     if ($isAdminPage) {
-        $HtmlResponse = $HtmlResponse -replace '!SETADMINGUID', "<script>adminGuid='$AdminGuid';</script>"
+        $setAdminGuid = "<script>adminGuid='$AdminGuid';</script>"
     }
-    else {
-        $HtmlResponse = $HtmlResponse -replace '!SETADMINGUID', ""
-    }
+    $HtmlResponse = $HtmlResponse -replace '!SETADMINGUID', $setAdminGuid
 
     # return HTML answer to caller
     $Buffer = [Text.Encoding]::UTF8.GetBytes($HtmlResponse)
