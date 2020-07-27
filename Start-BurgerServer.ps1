@@ -70,6 +70,12 @@ function Initialize-Webserver {
     # A GUID which the user needs to access the administration page
     "Admin-Access: $Binding$Script:AdminGuid".Replace("+", $env:computername).Replace("*", $env:computername) | Write-Log;
     
+    Set-HtmlTemplates
+
+    Read-Orders
+}
+
+function Set-HtmlTemplates {
     $HtmlHead = @"
     <head>
         <meta charset="UTF-8">
@@ -89,6 +95,7 @@ function Initialize-Webserver {
     </p>
 "@
     
+    # optional banner + optional link
     if($BannerImg -ne "") {
         $BannerHtml = "<img src=""$BannerImg"">"
         if ($BannerUrl -ne "") {
@@ -106,7 +113,10 @@ function Initialize-Webserver {
     $AdminPage = @"
         <!doctype html><html>$HtmlHead
         <body>$MenuLinks<br>
-        !ORDERTABLE
+        <div class="flex">
+            !ORDERTABLE
+        </div>
+        <br>
         Log of powershell webserver:<br>
         <pre>!WEBLOG</pre>
         </body></html>
@@ -121,10 +131,7 @@ function Initialize-Webserver {
         "POST /$AdminGuid" = $AdminPage
         "GET /style.css" = $StyleFileContent
         "GET /script.js" = $ScriptFileContent
-        "POST /$AdminGuid/delete" = ""
     }
-
-    Read-Orders
 }
 
 function Read-Orders {
@@ -299,7 +306,7 @@ function Pop-Request {
     [System.Net.HttpListenerRequest]$Request = $Context.Request
     $Response = $Context.Response
     $Script:ContinueListening = $true
-
+    
     # log access
     $hostname = Resolve-IPAdress $Request.RemoteEndPoint.Address
     "$($hostname) $($Request.httpMethod) $($Request.Url.PathAndQuery)" | Write-Log
@@ -308,46 +315,46 @@ function Pop-Request {
     $Received = '{0} {1}' -f $Request.httpMethod, $Request.Url.LocalPath
     $HtmlResponse = $HtmlResponseContent[$Received]
 
-    [bool]$isAdminPage = $false
-
-    # check for known commands
-    switch ($Received)
-    {
-        {$_ -like "POST /*"}
-        {
-            $data = Get-RequestData($Request)
-            "$hostname $data" | Write-Log
-            Receive-Order $data
-        }
-
-        "GET /$AdminGuid"
-        {
-            $isAdminPage = $true
-        }
-
-        "GET /$AdminGuid/exit"
-        {
-            $Script:ContinueListening = $false
-        }
-
-        "GET /$AdminGuid/reloadOrders"
-        {
-            "$hostname Reloading Orders" | Write-Log
-            Read-Orders
-        }
-
-        "GET /script.js"
-        {
-            $Response.ContentType = "application/javascript"
-        }
+    # POSTs are a new burger order to process
+    if ($Request.httpMethod -eq "POST") {
+        $data = Get-RequestData($Request)
+        "$hostname POST $data" | Write-Log
+        Receive-Order $data
     }
 
+    # DELETE an order
     if ($Request.HttpMethod -eq "DELETE") {
         $data = Get-RequestData($Request)
         "$hostname Data: $data" | Write-Log
         Receive-OrderRemoval $Request.Url.LocalPath $data
     }
 
+    # other special cases
+    switch ($Received)
+    {
+        "GET /$AdminGuid/exit"
+        {
+            $Script:ContinueListening = $false
+        }    
+
+        "GET /$AdminGuid/reloadOrders"
+        {
+            "$hostname Reloading Orders" | Write-Log
+            Read-Orders
+        }    
+
+        "GET /script.js"
+        {
+            $Response.ContentType = "application/javascript"
+        }    
+    }    
+
+    # "elevate" for administration
+    [bool]$isAdminPage = $false
+    if ($Request.Url.LocalPath -like "/$AdminGuid*") {
+        $isAdminPage = $true;
+    }    
+    
     # replace the dynamic parts
     $HtmlResponse = $HtmlResponse -replace '!WEBLOG', $WebLog
     $HtmlResponse = $HtmlResponse -replace '!ORDERTABLE', (Get-OrderTable $isAdminPage)
