@@ -29,6 +29,10 @@ button:hover {
 	cursor: pointer;
 }
 
+.flex {
+    display: flex;
+}
+
 .tablewrapper {
     width: 600px;
     border-radius: 5px;
