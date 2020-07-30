@@ -4,17 +4,13 @@ window.onload = function() {
         deleteOrderLink.onclick = (eventArgs) => {
             deleteOrder(eventArgs.target.attributes["orderGuid"].value)
                 .then(() => window.location.reload());
-            // refresh the page
-            //,,,,window.location.reload();
         }
     });
 
     // set the onclick event for the reloadOrdersLink
-    document.getElementById("reloadOrdersLink").onclick = () => {
+    document.getElementById("reloadOrdersLink")?.onclick = () => {
         reloadOrders()
             .then(window.location.reload);
-        // refresh the page
-        //,,,, window.location.reload();
     }
 }
 
