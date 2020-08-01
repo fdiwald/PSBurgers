@@ -88,10 +88,8 @@ function Set-HtmlTemplates {
     # navigation header line
     $MenuLinks = @"
     <p>
-        <a href="/">Burger bestellen</a>
-        <a href="/log">Web logs</a>
+        <a href="/">Front end</a>
         <a href="/$AdminGuid/exit">Stop webserver</a>
-        <a href="javascript:void(0);" id="reloadOrdersLink">Reload orders</a>
     </p>
 "@
     
@@ -125,7 +123,6 @@ function Set-HtmlTemplates {
     $Script:HtmlResponseContent = @{
         "GET /" = $DefaultPage
         "POST /" = $DefaultPage
-        "GET /reloadOrders" = $DefaultPage
         "GET /$AdminGuid/exit" = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
         "GET /$AdminGuid" = $AdminPage
         "POST /$AdminGuid" = $AdminPage
@@ -172,11 +169,13 @@ function Get-OrderTable([bool]$isAdminPage) {
                     <tr>
                         <th>Name</th>
                         <th>Bemerkung</th>
+                        <th>
 "@
-                        $(if ($isAdminPage) {
-                            "<th>L&ouml;schen</th>"
-                        })
+                            $(if ($isAdminPage) {
+                                "L&ouml;schen"
+                            })
 @"
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -186,10 +185,16 @@ function Get-OrderTable([bool]$isAdminPage) {
                     if ($null -eq $Comment) {
                         $Comment = ""
                     }
-                    "<tr><td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td><td>$($Comment)</td>"
-                    if ($isAdminPage) {
-                        "<td class=""deleteOrderColumn""><a class=""deleteOrderLink"" href=""javascript:void(0);"" orderGuid=""$($Order.GetAttribute($ATTRIBUTE_GUID).ToString())"">&#10060;</a></td>"
-                    }
+                    @"
+                    <tr>
+                        <td>$($Order.GetAttribute($ATTRIBUTE_NAME))</td>
+                        <td>$($Comment)</td>
+"@
+                        if ($isAdminPage) {
+                            "<td class=""deleteOrderColumn""><a class=""deleteOrderLink"" href=""javascript:void(0);"" orderGuid=""$($Order.GetAttribute($ATTRIBUTE_GUID).ToString())"">&#10060;</a></td>"
+                        } else {
+                            "<td></td>"
+                        }
                     "</tr>"
                 }
 @"
@@ -197,15 +202,10 @@ function Get-OrderTable([bool]$isAdminPage) {
                         <td>
                             <input type="text" name="name" placeholder="Dein Name">
                         </td>
-"@
-                        if ($isAdminPage){
-                            "<td colspan=""2"">"
-                        }
-                        else {
-                            "<td>"
-                        }
-                        @"
+                        <td>
                             <input type="text" name="comment" placeholder="Bemerkung">
+                        </td>
+                        <td>
                             <input type="submit" value="Bestellen">
                         </td>
                     </tr>
@@ -335,12 +335,6 @@ function Pop-Request {
         "GET /$AdminGuid/exit"
         {
             $Script:ContinueListening = $false
-        }    
-
-        "GET /$AdminGuid/reloadOrders"
-        {
-            "$hostname Reloading Orders" | Write-Log
-            Read-Orders
         }    
 
         "GET /script.js"
