@@ -122,10 +122,8 @@ function Set-HtmlTemplates {
     # HTML answer templates for specific calls
     $Script:HtmlResponseContent = @{
         "GET /" = $DefaultPage
-        "POST /" = $DefaultPage
         "GET /$AdminGuid/exit" = "<!doctype html><html>$HtmlHead<body>Stopped powershell webserver</body></html>"
         "GET /$AdminGuid" = $AdminPage
-        "POST /$AdminGuid" = $AdminPage
         "GET /style.css" = $StyleFileContent
         "GET /script.js" = $ScriptFileContent
     }
@@ -304,7 +302,7 @@ function Pop-Request {
     # Get a request from the stack and process it
     $Context = $Listener.GetContext()
     [System.Net.HttpListenerRequest]$Request = $Context.Request
-    $Response = $Context.Response
+    [System.Net.HttpListenerResponse]$Response = $Context.Response
     $Script:ContinueListening = $true
     
     # log access
@@ -320,6 +318,7 @@ function Pop-Request {
         $data = Get-RequestData($Request)
         "$hostname POST $data" | Write-Log
         Receive-Order $data
+        $Response.Redirect($Request.Url)
     }
 
     # DELETE an order
