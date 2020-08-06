@@ -140,13 +140,24 @@ function Read-Orders {
     }
 }
 
-function Add-Order ([string]$Name, [string]$Comment) {
-    # Adds a new Order into the $Order object.
-    $NewOrder = $Orders.CreateElement("Order")
-    $NewOrder.SetAttribute($ATTRIBUTE_GUID, (New-Guid))
-    $NewOrder.SetAttribute($ATTRIBUTE_NAME, $Name)
-    $NewOrder.SetAttribute($ATTRIBUTE_COMMENT, $Comment)
-    $Orders.FirstChild.AppendChild($NewOrder) | Out-Null
+function Add-Order ([string]$name, [string]$comment) {
+    # Adds a new Order into the $Order object. And overwrites a possibly existent order for the same name.
+    $newOrder = $Orders.CreateElement("Order")
+    $newOrder.SetAttribute($ATTRIBUTE_GUID, (New-Guid))
+    $newOrder.SetAttribute($ATTRIBUTE_NAME, $Name)
+    $newOrder.SetAttribute($ATTRIBUTE_COMMENT, $comment)
+    
+    $oldOrders = $Orders.SelectNodes("/Orders/Order[@$ATTRIBUTE_NAME=""$name""]")
+    if ($oldOrders.Count -gt 0) {
+        $oldOrder = $oldOrders[0]
+    }
+    if($null -eq $oldOrder)
+    {
+        $Orders.FirstChild.AppendChild($newOrder) | Out-Null
+    } else {
+        $Orders.FirstChild.ReplaceChild($newOrder, $oldOrder) | Out-Null
+    }
+
     $Orders.Save($OrdersFile) | Write-Log
 }
 
