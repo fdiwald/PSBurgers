@@ -44,9 +44,11 @@ Author: Florian Diwald
 Param([STRING]$Binding = 'http://localhost:8080/', [STRING]$BaseDir = "", [string]$BannerImg = "", [string]$BannerUrl = "")
 
 $Product = "PSBurgers"
-$Version = "1.3"
+$Version = "1.4"
 
 Add-Type -AssemblyName System.Web
+
+$bufferedHostNames = @{}
 
 function Initialize-Webserver {
     # Initial one time tasks
@@ -135,6 +137,7 @@ function Read-Orders {
         [XML]$Script:Orders = Get-Content $OrdersFile
     } else {
         [XML]$Script:Orders = New-Object -TypeName System.Xml.XmlDocument
+        $Orders.AppendChild($Orders.CreateXmlDeclaration("1.0", "UTF-8", "yes")) | Out-Null
         [System.Xml.XmlNode]$RootNode = $Orders.CreateElement("Orders")
         $Orders.AppendChild($RootNode) | Out-Null
     }
@@ -153,9 +156,9 @@ function Add-Order ([string]$name, [string]$comment) {
     }
     if($null -eq $oldOrder)
     {
-        $Orders.FirstChild.AppendChild($newOrder) | Out-Null
+        $Orders.DocumentElement.AppendChild($newOrder) | Out-Null
     } else {
-        $Orders.FirstChild.ReplaceChild($newOrder, $oldOrder) | Out-Null
+        $Orders.DocumentElement.ReplaceChild($newOrder, $oldOrder) | Out-Null
     }
 
     $Orders.Save($OrdersFile) | Write-Log
@@ -394,11 +397,20 @@ function Get-RequestData ($request){
 
 function Resolve-IPAdress([System.Net.IPAddress]$IPAddress) {
     # Returns the hostname to the given IP-Address or the IP-Address if not successful.
-    try {
-        $hostname = [System.Net.DNS]::GetHostEntry($IPAddress).hostname;
+    if($bufferedHostNames.Contains($IPAddress.IPAddressToString))
+    {
+        $hostname = $bufferedHostNames[$IPAddress.IPAddressToString]
     }
-    catch {
-        $hostname = $IPAddress
+    else
+    {
+        try {
+            $hostname = [System.Net.DNS]::GetHostEntry($IPAddress).hostname;
+            $bufferedHostNames[$IPAddress.IPAddressToString] = $hostname
+            Write-Host "Resolved IP-Address " $IPAddress " " $hostname
+        }
+        catch {
+            $hostname = $IPAddress
+        }
     }
     $hostname
 }
